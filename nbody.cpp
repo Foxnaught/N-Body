@@ -34,17 +34,18 @@ struct nbody
 	bool staticBody;
 };
 
-nbody* getNewNBody(int newX, int newY, int dX, int dY)
+nbody getNewNBody(int newX, int newY, double dX, double dY)
 {
 	nbody* newNBody = new nbody();
 	newNBody->x = newX;
 	newNBody->y = newY;
-	newNBody->velX = (newX - dX)/20.0;
-	newNBody->velY = (newY - dY)/20.0;
+	newNBody->velX = dX;
+	newNBody->velY = dY;
 	newNBody->mass = 1;
 	newNBody->radius = 1.5;
 
-	nbody* retBody = newNBody;
+	nbody retBody = *newNBody;
+	delete newNBody;
 	return retBody;
 }
 
@@ -90,13 +91,14 @@ int main()
 					
 					//If one body is within another, merge them.
 					bool withinRange = totalDist < target.radius || totalDist < curBody->radius;
-					if (withinRange && curBody->mass >= target.mass && !target.staticBody)
+					if ((withinRange && (curBody->mass >= target.mass || curBody->staticBody)) && !target.staticBody)
 					{
 						//Ideal inelastic collision
 						curBody->velX = (curBody->mass*curBody->velX + target.mass*target.velX)/(curBody->mass+target.mass);
 						curBody->velY = (curBody->mass*curBody->velY + target.mass*target.velY)/(curBody->mass+target.mass);
 						curBody->mass += target.mass;
 						curBody->radius = cbrt(target.radius*target.radius*target.radius + curBody->radius*curBody->radius*curBody->radius);
+						
 						nbodyList.erase(nbodyList.begin()+t);
 					}
 					else
@@ -130,14 +132,44 @@ int main()
 		SDL_PollEvent(&event);
 		if (event.type == SDL_QUIT)
 			running = false;
+		else if (event.type == SDL_KEYDOWN && (char)event.key.keysym.scancode == SDL_SCANCODE_C)
+		{
+			nbodyList.clear();
+		}
+		else if (event.type == SDL_KEYDOWN && (char)event.key.keysym.scancode == SDL_SCANCODE_A)
+		{
+			nbodyList.clear();
+			int width;
+			int height;
+			SDL_GetWindowSize(mainWin, &width, &height);
+			nbody newBody = getNewNBody((double)width/2, (double)height/2, 0, 0);
+			newBody.staticBody = true;
+			newBody.mass = 1000;
+			newBody.radius = cbrt(1000);
+			nbodyList.push_back(newBody);
+			
+			for (int i=0;i<1000;i++)
+			{
+				double newX = rand() % (2*width);
+				double newY = rand() % (2*height);
+				double dX = newX - (double)width/2;
+				double dY = newY - (double)height/2;
+				double angle = atan2(-dY, dX);
+				double totalVel = 20/sqrt(sqrt(dX*dX+dY*dY));
+				double newVelX = sin(angle)*totalVel;
+				double newVelY = cos(angle)*totalVel;
+				nbody newBody = getNewNBody(newX, newY, newVelX, newVelY);
+				nbodyList.push_back(newBody);
+			}
+			
+		}
 		else if (event.type == SDL_KEYDOWN && (char)event.key.keysym.scancode == SDL_SCANCODE_P)
 		{
+			int width;
+			int height;
+			SDL_GetWindowSize(mainWin, &width, &height);
 			for (int i=0; i<30; i++)
 			{
-				int width;
-				int height;
-				SDL_GetWindowSize(mainWin, &width, &height);
-				
 				int x = rand() % width;
 				int y = rand() % height;
 				int rX = rand() % 30;
@@ -150,8 +182,8 @@ int main()
 				rX = 0;
 				rY = 0;
 				
-				nbody newNBody = *getNewNBody(x, y, x+rX, y+rY);
-				nbodyList.push_back(newNBody);
+				nbody newBody = getNewNBody(x, y, (double)rX/20, (double)rY/20);
+				nbodyList.push_back(newBody);
 			}
 		}
 		else if (event.type == SDL_MOUSEBUTTONDOWN && !placingBody)
@@ -167,9 +199,9 @@ int main()
 		}
 		else if (event.type == SDL_MOUSEBUTTONUP && placingBody)
 		{
-			nbody newNBody = *getNewNBody(newX, newY, dX, dY);
-			newNBody.staticBody = staticBody;
-			nbodyList.push_back(newNBody);
+			nbody newBody = getNewNBody(newX, newY, (double)(newX-dX)/20, (double)(newY-dY)/20);
+			newBody.staticBody = staticBody;
+			nbodyList.push_back(newBody);
 
 			staticBody = false;
 			placingBody = false;
