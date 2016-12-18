@@ -59,6 +59,7 @@ int main()
 
 	std::vector<nbody> nbodyList;
 
+	bool leftClick = false;
 	//Flags if we clicked and are setting up a new body but have not released it
 	bool placingBody = false;
 	//Flag if the body to be placed is to be static (0 velocity at all times)
@@ -137,6 +138,9 @@ int main()
 			running = false;
 		
 		const Uint8* keystate = SDL_GetKeyboardState(NULL);
+		int mouseX;
+		int mouseY;
+		Uint32 mouseState = SDL_GetMouseState(&mouseX, &mouseY);
 		if (keystate[SDL_SCANCODE_C])
 		{
 			nbodyList.clear();
@@ -191,28 +195,31 @@ int main()
 				nbodyList.push_back(newBody);
 			}
 		}
-		else if (event.type == SDL_MOUSEBUTTONDOWN && !placingBody)
+		else if (mouseState && !placingBody)
 		{
 			placingBody = true;
-			if (event.button.button == SDL_BUTTON_RIGHT)
+			leftClick = true;
+			if (mouseState & SDL_BUTTON(SDL_BUTTON_RIGHT))
 			{
 				staticBody = true;
+				leftClick = false;
 			}
 			
 			newX = event.button.x;
 			newY = event.button.y;
 		}
-		else if (event.type == SDL_MOUSEBUTTONUP && placingBody)
+		else if (mouseState == 0 && placingBody)
 		{
 			nbody newBody = getNewNBody(newX, newY, (double)(newX-dX)/20, (double)(newY-dY)/20);
 			newBody.staticBody = staticBody;
 			nbodyList.push_back(newBody);
 
-			staticBody = false;
+			leftClick = false;
 			placingBody = false;
+			staticBody = false;
 		}
 
-		if (placingBody)
+		if (placingBody && leftClick)
 		{
 			std::vector<SDL_Point>* circleCoords = getCirclePoints(newX, newY, 20, 3);
 			SDL_SetRenderDrawColor(ren, 0xFF, 0x00, 0x00, 0xFF);
