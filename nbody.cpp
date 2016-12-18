@@ -205,8 +205,8 @@ int main()
 				leftClick = false;
 			}
 			
-			newX = event.button.x;
-			newY = event.button.y;
+			newX = mouseX;
+			newY = mouseY;
 		}
 		else if (mouseState == 0 && placingBody)
 		{
