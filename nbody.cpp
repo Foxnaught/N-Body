@@ -54,7 +54,7 @@ int main()
 	bool running = true;
 	SDL_Event event;
 	SDL_Init(SDL_INIT_EVERYTHING);
-	SDL_Window *mainWin = SDL_CreateWindow("Hello World!", 100, 100, 1280, 960, SDL_WINDOW_SHOWN);
+	SDL_Window *mainWin = SDL_CreateWindow("Hello World!", 100, 100, 1000, 720, SDL_WINDOW_SHOWN);
 	SDL_Renderer *ren = SDL_CreateRenderer(mainWin, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
 	std::vector<nbody> nbodyList;
@@ -155,7 +155,7 @@ int main()
 				double dX = newX - (double)width/2;
 				double dY = newY - (double)height/2;
 				double angle = atan2(-dY, dX);
-				double totalVel = 20/sqrt(sqrt(dX*dX+dY*dY));
+				double totalVel = sqrt(1000)/sqrt(sqrt(dX*dX+dY*dY));
 				double newVelX = sin(angle)*totalVel;
 				double newVelY = cos(angle)*totalVel;
 				nbody newBody = getNewNBody(newX, newY, newVelX, newVelY);
