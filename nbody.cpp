@@ -68,6 +68,9 @@ int main()
 	int newY = 0;
 	int dX = 0;
 	int dY = 0;
+	//We will use a fixed timestep to create consistents results
+	//The smaller the time step the more accurate the simulation will become but the slower it will run
+	double timeStep = .2;
 	while (running)
 	{
 		SDL_SetRenderDrawColor(ren, 0x00, 0x00, 0x00, 0xFF);
@@ -106,8 +109,8 @@ int main()
 						double accel = nbodyList.at(t).mass*G/(totalDist*totalDist);
 						double accX = accel * distX/totalDist;
 						double accY = accel * distY/totalDist;
-						curBody->velX += accX;
-						curBody->velY += accY;
+						curBody->velX += accX*timeStep;
+						curBody->velY += accY*timeStep;
 					}
 				}	
 			}
@@ -119,8 +122,8 @@ int main()
 			}
 			
 			//Add velocity to position
-			curBody->x += curBody->velX;
-			curBody->y += curBody->velY;
+			curBody->x += curBody->velX*timeStep;
+			curBody->y += curBody->velY*timeStep;
 			
 			//Get the points representing the circle of the body and render it
 			std::vector<SDL_Point>* circleCoords = getCirclePoints(curBody->x, curBody->y, 20, curBody->radius);
@@ -132,11 +135,13 @@ int main()
 		SDL_PollEvent(&event);
 		if (event.type == SDL_QUIT)
 			running = false;
-		else if (event.type == SDL_KEYDOWN && (char)event.key.keysym.scancode == SDL_SCANCODE_C)
+		
+		const Uint8* keystate = SDL_GetKeyboardState(NULL);
+		if (keystate[SDL_SCANCODE_C])
 		{
 			nbodyList.clear();
 		}
-		else if (event.type == SDL_KEYDOWN && (char)event.key.keysym.scancode == SDL_SCANCODE_A)
+		else if (keystate[SDL_SCANCODE_A])
 		{
 			nbodyList.clear();
 			int width;
@@ -163,7 +168,7 @@ int main()
 			}
 			
 		}
-		else if (event.type == SDL_KEYDOWN && (char)event.key.keysym.scancode == SDL_SCANCODE_P)
+		else if (keystate[SDL_SCANCODE_P])
 		{
 			int width;
 			int height;
