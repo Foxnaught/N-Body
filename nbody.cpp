@@ -59,6 +59,10 @@ int main()
 
 	std::vector<nbody> nbodyList;
 
+	//Keep track if we have been holding a keyboard or mouse button is being held down
+	bool buttonFlag = false;
+	//It can be hard to see multiple planets in orbit so the root scale flag will set the offset from the center of screen at root scale
+	bool rootScale = false;
 	bool leftClick = false;
 	//Flags if we clicked and are setting up a new body but have not released it
 	bool placingBody = false;
@@ -76,6 +80,9 @@ int main()
 	{
 		SDL_SetRenderDrawColor(ren, 0x00, 0x00, 0x00, 0xFF);
 		SDL_RenderClear(ren);
+		int width;
+		int height;
+		SDL_GetWindowSize(mainWin, &width, &height);
 		
 		for (int i=0; i<nbodyList.size(); i++)
 		{
@@ -126,8 +133,33 @@ int main()
 			curBody->x += curBody->velX*timeStep;
 			curBody->y += curBody->velY*timeStep;
 			
+			std::vector<SDL_Point>* circleCoords;
 			//Get the points representing the circle of the body and render it
-			std::vector<SDL_Point>* circleCoords = getCirclePoints(curBody->x, curBody->y, 20, curBody->radius);
+			//If we are in root scale then calculate the offset from the center and take the sqrt
+			//This lets us seem things that have flown far beyond the screen
+			if (rootScale)
+			{
+				//Get the offset from the center of the screen
+				double xOff = curBody->x - (double)width/2;
+				double yOff = curBody->y - (double)height/2;
+				//In order to do log scale around the center of the screen we have to take the log of the absolute value
+				//And flip it on the axis if it is negative
+				int xNeg = 1;
+				if (xOff < 0)
+					xNeg = -1;
+				int yNeg = 1;
+				if (yOff < 0)
+					yNeg = -1;
+				
+				double rootScaleX = xNeg*sqrt(xNeg*xOff);
+				double rootScaleY = yNeg*sqrt(yNeg*yOff);
+				circleCoords = getCirclePoints((double)width/2 + rootScaleX, (double)height/2 + rootScaleY, 20, curBody->radius);
+			}
+			else
+			{
+				circleCoords = getCirclePoints(curBody->x, curBody->y, 20, curBody->radius);
+			}
+			
 			SDL_SetRenderDrawColor(ren, 0xFF, 0xFF, 0xFF, 0xFF);
 			SDL_RenderDrawLines(ren, circleCoords->data(), circleCoords->size());
 			delete circleCoords;
@@ -148,9 +180,6 @@ int main()
 		else if (keystate[SDL_SCANCODE_A])
 		{
 			nbodyList.clear();
-			int width;
-			int height;
-			SDL_GetWindowSize(mainWin, &width, &height);
 			nbody newBody = getNewNBody((double)width/2, (double)height/2, 0, 0);
 			newBody.staticBody = true;
 			newBody.mass = 1000;
@@ -159,20 +188,25 @@ int main()
 			
 			for (int i=0;i<1000;i++)
 			{
-				double newX = rand() % (2*width);
-				double newY = rand() % (2*height);
-				double dX = newX - (double)width/2;
-				double dY = newY - (double)height/2;
-				double angle = atan2(-dY, dX);
-				double totalVel = sqrt(1000)/sqrt(sqrt(dX*dX+dY*dY));
+				double newX = rand() % width - (double)width/2;
+				double newY = rand() % height - (double)height/2;
+				double angle = atan2(-newY, newX);
+				double totalVel = sqrt(1000)/sqrt(sqrt(newX*newX+newY*newY));
 				double newVelX = sin(angle)*totalVel;
 				double newVelY = cos(angle)*totalVel;
-				nbody newBody = getNewNBody(newX, newY, newVelX, newVelY);
+				nbody newBody = getNewNBody(newX + (double)width/2, newY + (double)height/2, newVelX, newVelY);
 				nbodyList.push_back(newBody);
 			}
 			
 		}
-		else if (keystate[SDL_SCANCODE_P])
+		else if (keystate[SDL_SCANCODE_L])
+		{
+			//Prevent multiple firings from one press
+			if (!buttonFlag)
+				rootScale = !rootScale;
+			buttonFlag = true;
+		}
+		else if (keystate[SDL_SCANCODE_P] && !buttonFlag)
 		{
 			int width;
 			int height;
@@ -194,6 +228,7 @@ int main()
 				nbody newBody = getNewNBody(x, y, (double)rX/20, (double)rY/20);
 				nbodyList.push_back(newBody);
 			}
+			buttonFlag = true;
 		}
 		else if (mouseState && !placingBody)
 		{
@@ -217,6 +252,11 @@ int main()
 			leftClick = false;
 			placingBody = false;
 			staticBody = false;
+		}
+		else
+		{
+			//buttonFlag is used to prevent a toggle-able state from firing more than once on a single press
+			buttonFlag = false;
 		}
 
 		if (placingBody && leftClick)
