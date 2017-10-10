@@ -2,12 +2,12 @@
 #include <vector>
 #include <memory>
 #include <math.h>
-#include <SDL2/SDL.h>
+#include "SDL/include/SDL.h"
 
 
-std::vector<SDL_Point>* getCirclePoints(int xOff, int yOff, int numPoints, double radius)
+std::vector<SDL_Point> getCirclePoints(int xOff, int yOff, int numPoints, double radius)
 {
-	std::vector<SDL_Point>* circleCoords = new std::vector<SDL_Point>();
+	std::vector<SDL_Point> circleCoords;
 	double deltaPhi = 2*3.1415926/numPoints;
 	for (int i=0; i<numPoints+1; i++)
 	{
@@ -17,7 +17,7 @@ std::vector<SDL_Point>* getCirclePoints(int xOff, int yOff, int numPoints, doubl
 		tempCoord.x = tempX + xOff;
 		tempCoord.y = tempY + yOff;
 		
-		circleCoords->push_back(tempCoord);
+		circleCoords.push_back(tempCoord);
 	}
 	
 	return circleCoords;
@@ -34,22 +34,21 @@ struct nbody
 	bool staticBody;
 };
 
-nbody getNewNBody(int newX, int newY, double dX, double dY)
+nbody getNewNBody(int newX, int newY, double dX, double dY, bool staticFlag)
 {
-	nbody* newNBody = new nbody();
-	newNBody->x = newX;
-	newNBody->y = newY;
-	newNBody->velX = dX;
-	newNBody->velY = dY;
-	newNBody->mass = 1;
-	newNBody->radius = 1.5;
+	nbody newNBody;
+	newNBody.x = newX;
+	newNBody.y = newY;
+	newNBody.velX = dX;
+	newNBody.velY = dY;
+	newNBody.mass = 1;
+	newNBody.radius = 1.5;
+	newNBody.staticBody = staticFlag;
 
-	nbody retBody = *newNBody;
-	delete newNBody;
-	return retBody;
+	return newNBody;
 }
 
-int main()
+int main(int argc, char** argv)
 {
 	bool running = true;
 	SDL_Event event;
@@ -73,7 +72,7 @@ int main()
 	int newY = 0;
 	int dX = 0;
 	int dY = 0;
-	//We will use a fixed timestep to create consistents results
+	//We will use a fixed timestep to create consistent results
 	//The smaller the time step the more accurate the simulation will become but the slower it will run
 	double timeStep = .2;
 	while (running)
@@ -133,7 +132,7 @@ int main()
 			curBody->x += curBody->velX*timeStep;
 			curBody->y += curBody->velY*timeStep;
 			
-			std::vector<SDL_Point>* circleCoords;
+			std::vector<SDL_Point> circleCoords;
 			//Get the points representing the circle of the body and render it
 			//If we are in root scale then calculate the offset from the center and take the sqrt
 			//This lets us seem things that have flown far beyond the screen
@@ -142,17 +141,17 @@ int main()
 				//Get the offset from the center of the screen
 				double xOff = curBody->x - (double)width/2;
 				double yOff = curBody->y - (double)height/2;
-				//In order to do log scale around the center of the screen we have to take the log of the absolute value
-				//And flip it on the axis if it is negative
-				int xNeg = 1;
-				if (xOff < 0)
-					xNeg = -1;
-				int yNeg = 1;
-				if (yOff < 0)
-					yNeg = -1;
-				
-				double rootScaleX = xNeg*sqrt(xNeg*xOff);
-				double rootScaleY = yNeg*sqrt(yNeg*yOff);
+				//Get the distance from the center of the screen
+				double dist = sqrt(xOff*xOff + yOff*yOff);
+				//Get the root distance and split it into its components
+				double rootDist = sqrt(dist);
+				double rootScaleX = 0, rootScaleY = 0;
+				if (rootDist > 0)
+				{
+					rootScaleX = rootDist*xOff/dist;
+					rootScaleY = rootDist*yOff/dist;
+				}
+
 				circleCoords = getCirclePoints((double)width/2 + rootScaleX, (double)height/2 + rootScaleY, 20, curBody->radius);
 			}
 			else
@@ -161,8 +160,7 @@ int main()
 			}
 			
 			SDL_SetRenderDrawColor(ren, 0xFF, 0xFF, 0xFF, 0xFF);
-			SDL_RenderDrawLines(ren, circleCoords->data(), circleCoords->size());
-			delete circleCoords;
+			SDL_RenderDrawLines(ren, circleCoords.data(), circleCoords.size());
 		}
 
 		SDL_PollEvent(&event);
@@ -180,8 +178,7 @@ int main()
 		else if (keystate[SDL_SCANCODE_A])
 		{
 			nbodyList.clear();
-			nbody newBody = getNewNBody((double)width/2, (double)height/2, 0, 0);
-			newBody.staticBody = true;
+			nbody newBody = getNewNBody((double)width/2, (double)height/2, 0, 0, true);
 			newBody.mass = 1000;
 			newBody.radius = cbrt(1000);
 			nbodyList.push_back(newBody);
@@ -194,7 +191,7 @@ int main()
 				double totalVel = sqrt(1000)/sqrt(sqrt(newX*newX+newY*newY));
 				double newVelX = sin(angle)*totalVel;
 				double newVelY = cos(angle)*totalVel;
-				nbody newBody = getNewNBody(newX + (double)width/2, newY + (double)height/2, newVelX, newVelY);
+				nbody newBody = getNewNBody(newX + (double)width/2, newY + (double)height/2, newVelX, newVelY, false);
 				nbodyList.push_back(newBody);
 			}
 			
@@ -225,7 +222,7 @@ int main()
 				rX = 0;
 				rY = 0;
 				
-				nbody newBody = getNewNBody(x, y, (double)rX/20, (double)rY/20);
+				nbody newBody = getNewNBody(x, y, (double)rX/20, (double)rY/20, false);
 				nbodyList.push_back(newBody);
 			}
 			buttonFlag = true;
@@ -245,8 +242,7 @@ int main()
 		}
 		else if (mouseState == 0 && placingBody)
 		{
-			nbody newBody = getNewNBody(newX, newY, (double)(newX-dX)/20, (double)(newY-dY)/20);
-			newBody.staticBody = staticBody;
+			nbody newBody = getNewNBody(newX, newY, (double)(newX-dX)/20, (double)(newY-dY)/20, staticBody);
 			nbodyList.push_back(newBody);
 
 			leftClick = false;
@@ -261,13 +257,12 @@ int main()
 
 		if (placingBody && leftClick)
 		{
-			std::vector<SDL_Point>* circleCoords = getCirclePoints(newX, newY, 20, 3);
+			std::vector<SDL_Point> circleCoords = getCirclePoints(newX, newY, 20, 3);
 			SDL_SetRenderDrawColor(ren, 0xFF, 0x00, 0x00, 0xFF);
-			SDL_RenderDrawLines(ren, circleCoords->data(), circleCoords->size());
+			SDL_RenderDrawLines(ren, circleCoords.data(), circleCoords.size());
 			SDL_GetMouseState(&dX, &dY);
 			SDL_SetRenderDrawColor(ren, 0xFF, 0xFF, 0xFF, 0xFF);
 			SDL_RenderDrawLine(ren, newX, newY, dX, dY);
-			delete circleCoords;
 		}
 
 
