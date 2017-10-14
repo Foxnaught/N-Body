@@ -4,10 +4,17 @@
 #include <math.h>
 #include "SDL/include/SDL.h"
 
+using namespace std;
 
-std::vector<SDL_Point> getCirclePoints(int xOff, int yOff, int numPoints, double radius)
+//Gravitational constant, unit particles are 1kg
+//double G = 6.67408E-10f;
+//Toy constant, unit particles are asteroid size  ~1.5 billion kg
+double G = 1;
+
+
+vector<SDL_Point> getCirclePoints(int xOff, int yOff, int numPoints, double radius)
 {
-	std::vector<SDL_Point> circleCoords;
+	vector<SDL_Point> circleCoords;
 	double deltaPhi = 2*3.1415926/numPoints;
 	for (int i=0; i<numPoints+1; i++)
 	{
@@ -48,15 +55,58 @@ nbody getNewNBody(int newX, int newY, double dX, double dY, bool staticFlag)
 	return newNBody;
 }
 
+void placeRandomField(int massCount, double velocity, double radius, SDL_Window* renderWindow, vector<nbody>* nbodyList)
+{
+	int width;
+	int height;
+	SDL_GetWindowSize(renderWindow, &width, &height);
+	for (int i=0; i<massCount; i++)
+	{
+		int x = rand() % width;
+		int y = rand() % height;
+		double angle = (double)rand()/RAND_MAX*2*3.1415926;
+		double newVelX = cos(angle)*velocity;
+		double newVelY = sin(angle)*velocity;
+		nbody newBody = getNewNBody(x, y, newVelX, newVelY, false);
+		nbodyList->push_back(newBody);
+	}
+}
+
+void makeAccDisk(int massCount, double radius, double centerMass, SDL_Window* renderWindow, vector<nbody>* nbodyList)
+{
+	nbodyList->clear();
+	int width;
+	int height;
+	SDL_GetWindowSize(renderWindow, &width, &height);
+	nbody newBody = getNewNBody((double)width/2, (double)height/2, 0, 0, true);
+	newBody.mass = centerMass;
+	newBody.radius = cbrt(centerMass);
+	nbodyList->push_back(newBody);
+		
+	for (int i=0;i<massCount;i++)
+	{
+		double newDist = (double)rand()/RAND_MAX*radius+50;
+		double newAngle = (double)rand()/RAND_MAX*2*3.1415926;
+		double dX = cos(newAngle)*newDist;
+		double dY = sin(newAngle)*newDist;
+		double totalVel = sqrt((centerMass*G)/newDist);
+		double tanAngle = atan2(-dY, dX);
+		double newVelX = sin(tanAngle)*totalVel;
+		double newVelY = cos(tanAngle)*totalVel;
+		nbody newBody = getNewNBody(dX + (double)width/2, dY + (double)height/2, newVelX, newVelY, false);
+		nbodyList->push_back(newBody);
+	}	
+}
+
 int main(int argc, char** argv)
 {
 	bool running = true;
 	SDL_Event event;
 	SDL_Init(SDL_INIT_EVERYTHING);
-	SDL_Window *mainWin = SDL_CreateWindow("Hello World!", 100, 100, 1000, 720, SDL_WINDOW_SHOWN);
+	SDL_Window *mainWin = SDL_CreateWindow("NBODY SIM", 100, 100, 1000, 720, SDL_WINDOW_SHOWN);
 	SDL_Renderer *ren = SDL_CreateRenderer(mainWin, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-	std::vector<nbody> nbodyList;
+	vector<nbody> nbodyList;
 
 	//Keep track if we have been holding a keyboard or mouse button is being held down
 	bool buttonFlag = false;
@@ -74,7 +124,7 @@ int main(int argc, char** argv)
 	int dY = 0;
 	//We will use a fixed timestep to create consistent results
 	//The smaller the time step the more accurate the simulation will become but the slower it will run
-	double timeStep = .2;
+	double timeStep = .1;
 	while (running)
 	{
 		SDL_SetRenderDrawColor(ren, 0x00, 0x00, 0x00, 0xFF);
@@ -93,8 +143,6 @@ int main(int argc, char** argv)
 				if (i != t)
 				{
 					nbody target = nbodyList.at(t);
-					//This should be the gravitational constant but since this is a toy physics environment...
-					double G = 1;
 					double distX = target.x - curBody->x;
 					double distY = target.y - curBody->y;
 					double totalDist = sqrt(distX*distX + distY*distY);
@@ -132,7 +180,7 @@ int main(int argc, char** argv)
 			curBody->x += curBody->velX*timeStep;
 			curBody->y += curBody->velY*timeStep;
 			
-			std::vector<SDL_Point> circleCoords;
+			vector<SDL_Point> circleCoords;
 			//Get the points representing the circle of the body and render it
 			//If we are in root scale then calculate the offset from the center and take the sqrt
 			//This lets us seem things that have flown far beyond the screen
@@ -157,6 +205,16 @@ int main(int argc, char** argv)
 			else
 			{
 				circleCoords = getCirclePoints(curBody->x, curBody->y, 20, curBody->radius);
+				vector<SDL_Point> velVec;
+				SDL_Point start, end;
+				start.x = curBody->x;
+				start.y = curBody->y;
+				end.x = curBody->x+curBody->velX*5;
+				end.y = curBody->y+curBody->velY*5;
+				velVec.push_back(start);
+				velVec.push_back(end);
+				SDL_SetRenderDrawColor(ren, 0xFF, 0x00, 0x00, 0xFF);
+				SDL_RenderDrawLines(ren, velVec.data(), velVec.size());
 			}
 			
 			SDL_SetRenderDrawColor(ren, 0xFF, 0xFF, 0xFF, 0xFF);
@@ -175,26 +233,10 @@ int main(int argc, char** argv)
 		{
 			nbodyList.clear();
 		}
-		else if (keystate[SDL_SCANCODE_A])
+		else if (keystate[SDL_SCANCODE_A] && !buttonFlag)
 		{
-			nbodyList.clear();
-			nbody newBody = getNewNBody((double)width/2, (double)height/2, 0, 0, true);
-			newBody.mass = 1000;
-			newBody.radius = cbrt(1000);
-			nbodyList.push_back(newBody);
-			
-			for (int i=0;i<1000;i++)
-			{
-				double newX = rand() % width - (double)width/2;
-				double newY = rand() % height - (double)height/2;
-				double angle = atan2(-newY, newX);
-				double totalVel = sqrt(1000)/sqrt(sqrt(newX*newX+newY*newY));
-				double newVelX = sin(angle)*totalVel;
-				double newVelY = cos(angle)*totalVel;
-				nbody newBody = getNewNBody(newX + (double)width/2, newY + (double)height/2, newVelX, newVelY, false);
-				nbodyList.push_back(newBody);
-			}
-			
+			makeAccDisk(2000, height, 1000, mainWin, &nbodyList);
+			buttonFlag = true;
 		}
 		else if (keystate[SDL_SCANCODE_L])
 		{
@@ -205,26 +247,7 @@ int main(int argc, char** argv)
 		}
 		else if (keystate[SDL_SCANCODE_P] && !buttonFlag)
 		{
-			int width;
-			int height;
-			SDL_GetWindowSize(mainWin, &width, &height);
-			for (int i=0; i<30; i++)
-			{
-				int x = rand() % width;
-				int y = rand() % height;
-				int rX = rand() % 30;
-				int rY = rand() % 30;
-				if (rand() % 2 == 0)
-					rX = -rX;
-				if (rand() % 2 == 0)
-					rY = -rY;
-
-				rX = 0;
-				rY = 0;
-				
-				nbody newBody = getNewNBody(x, y, (double)rX/20, (double)rY/20, false);
-				nbodyList.push_back(newBody);
-			}
+			placeRandomField(30, .5, height, mainWin, &nbodyList);
 			buttonFlag = true;
 		}
 		else if (mouseState && !placingBody)
@@ -257,7 +280,7 @@ int main(int argc, char** argv)
 
 		if (placingBody && leftClick)
 		{
-			std::vector<SDL_Point> circleCoords = getCirclePoints(newX, newY, 20, 3);
+			vector<SDL_Point> circleCoords = getCirclePoints(newX, newY, 20, 3);
 			SDL_SetRenderDrawColor(ren, 0xFF, 0x00, 0x00, 0xFF);
 			SDL_RenderDrawLines(ren, circleCoords.data(), circleCoords.size());
 			SDL_GetMouseState(&dX, &dY);
