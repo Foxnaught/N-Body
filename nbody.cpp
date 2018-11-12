@@ -4,6 +4,8 @@
 #include <math.h>
 #include <stdint.h>
 #include "SDL/include/SDL.h"
+#include <CL/cl.hpp>
+#include "windows.h"
 
 using namespace std;
 
@@ -33,15 +35,16 @@ vector<SDL_Point> getCirclePoints(int xOff, int yOff, int numPoints, double radi
 	return circleCoords;
 }
 
-struct nbody
+struct __attribute__ ((packed)) nbody
 {
-	double x;
-	double y;
-	double velX;
-	double velY;
-	double radius;
-	uint32_t mass;
-	bool staticBody;
+	cl_double x;
+	cl_double y;
+	cl_double velX;
+	cl_double velY;
+	cl_double radius;
+	cl_int mass;
+	cl_bool staticBody;
+	cl_bool dead;
 };
 
 nbody getNewNBody(int newX, int newY, double dX, double dY, int unitMasses, bool staticFlag)
@@ -107,59 +110,44 @@ void makeAccDisk(int massCount, double radius, double centerMass, SDL_Window* re
 
 void printTotalMomentum(vector<nbody>* nbodyList);
 
-void updateBodies(vector<nbody>* nbodyList)
+vector<nbody> updateBodies(vector<nbody> nbodyList, cl::Program program, cl::Device default_device, cl::Context context, cl::CommandQueue queue, cl::Buffer buffer_A, cl::Buffer buffer_C, cl::Buffer buffer_N)
 {
-	//We will use a fixed timestep to create consistent results
-	//The smaller the time step the more accurate the simulation will become but the slower it will run
-	double timeStep = .1;
-	for (int i=0; i<nbodyList->size(); i++)
+
+	// apparently OpenCL only likes arrays ...
+	// N holds the number of elements in the vectors we want to add
+	int N[1] = {nbodyList.size()};
+	int n = N[0];
+
+	// push write commands to queue
+	queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, sizeof(nbody)*n, &nbodyList[0]);
+	queue.enqueueWriteBuffer(buffer_N, CL_TRUE, 0, sizeof(int),   N);
+
+	nbody C[n] = {0};
+	queue.enqueueWriteBuffer(buffer_C, CL_TRUE, 0, sizeof(nbody)*n, C);
+
+	// RUN ZE KERNEL
+	cl::Kernel simple_add(program, "simple_add");
+	simple_add.setArg(0, buffer_A);
+	simple_add.setArg(1, buffer_C);
+	simple_add.setArg(2, buffer_N);
+	queue.enqueueNDRangeKernel(simple_add, cl::NullRange, cl::NDRange(max(1, n)), cl::NullRange);
+	queue.finish();
+
+	// read result from GPU to here
+	queue.enqueueReadBuffer(buffer_C, CL_TRUE, 0, sizeof(nbody)*n, C);
+
+	for (int i=0;i<nbodyList.size();i++)
 	{
-		nbody* curBody = &nbodyList->at(i);
-		
-		//Go through all other bodies and add their gravity effects to this body's velocity
-		for (int t=nbodyList->size()-1; t >= 0; t--)
-		{
-			if (i != t)
-			{
-				nbody target = nbodyList->at(t);
-				double distX = target.x - curBody->x;
-				double distY = target.y - curBody->y;
-				double totalDist = sqrt(distX*distX + distY*distY);
-				
-				//If one body is within another, merge them.
-				bool withinRange = totalDist < target.radius || totalDist < curBody->radius;
-				if ((withinRange && (curBody->mass >= target.mass || curBody->staticBody)) && !target.staticBody)
-				{
-					//Ideal elastic collision
-					curBody->velX = (curBody->mass*curBody->velX + target.mass*target.velX)/(curBody->mass+target.mass);
-					curBody->velY = (curBody->mass*curBody->velY + target.mass*target.velY)/(curBody->mass+target.mass);
-					curBody->mass += target.mass;
-					curBody->radius = cbrt(target.radius*target.radius*target.radius + curBody->radius*curBody->radius*curBody->radius);
-
-					nbodyList->erase(nbodyList->begin()+t);
-					//printTotalMomentum(nbodyList);
-				}
-				else
-				{
-					double accel = nbodyList->at(t).mass*G/(totalDist*totalDist);
-					double accX = accel * distX/totalDist;
-					double accY = accel * distY/totalDist;
-					curBody->velX += accX*timeStep;
-					curBody->velY += accY*timeStep;
-				}
-			}	
-		}
-
-		if (curBody->staticBody)
-		{
-			curBody->velX = 0;
-			curBody->velY = 0;
-		}
-		
-		//Add velocity to position
-		curBody->x += curBody->velX*timeStep;
-		curBody->y += curBody->velY*timeStep;
+		nbodyList[i].x = C[i].x;
+		nbodyList[i].y = C[i].y;
+		nbodyList[i].velX = C[i].velX;
+		nbodyList[i].velY = C[i].velY;
+		nbodyList[i].mass = C[i].mass;
+		nbodyList[i].radius = C[i].radius;
+		nbodyList[i].dead = C[i].dead;
 	}
+
+	return nbodyList;
 }
 
 void printTotalMomentum(vector<nbody>* nbodyList)
@@ -179,6 +167,125 @@ void printTotalMomentum(vector<nbody>* nbodyList)
 
 int main(int argc, char** argv)
 {
+	// get all platforms (drivers), e.g. NVIDIA
+	std::vector<cl::Platform> all_platforms;
+	cl::Platform::get(&all_platforms);
+
+	if (all_platforms.size()==0) {
+		std::cout<<" No platforms found. Check OpenCL installation!\n";
+		exit(1);
+	}
+	cl::Platform default_platform=all_platforms[0];
+	std::cout << "Using platform: "<<default_platform.getInfo<CL_PLATFORM_NAME>()<<"\n";
+
+	// get default device (CPUs, GPUs) of the default platform
+	std::vector<cl::Device> all_devices;
+	default_platform.getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
+	if(all_devices.size()==0){
+		std::cout<<" No devices found. Check OpenCL installation!\n";
+		exit(1);
+	}
+
+	// use device[1] because that's a GPU; device[0] is the CPU
+	cl::Device default_device=all_devices[1];
+	std::cout<< "Using device: "<<default_device.getInfo<CL_DEVICE_NAME>()<<"\n";
+
+	// a context is like a "runtime link" to the device and platform;
+	// i.e. communication is possible
+	cl::Context context({default_device});
+
+	// create the program that we want to execute on the device
+	cl::Program::Sources sources;
+
+	// calculates for each element; C = A + B
+	std::string kernel_code=
+		"typedef struct __attribute__ ((packed)) {"
+		"	double x;"
+		"	double y;"
+		"	double velX;"
+		"	double velY;"
+		"	double radius;"
+		"	int mass;"
+		"	bool staticBody;"
+		"   bool dead;"
+		"} nbody;"
+		""
+		"   void kernel simple_add(global const nbody* A, nbody* C, global const int* N) {"
+		"       int ID, Nthreads, n, ratio, start, stop;"
+		"		double timeStep, G;"
+		""
+		"       ID = get_global_id(0);"
+		"       Nthreads = get_global_size(0);"
+		"		n = N[0];"
+		""
+		"       ratio = (n / Nthreads);"  // number of elements for each thread
+		"       start = ratio * ID;"
+		"       stop  = ratio * (ID + 1);"
+		"		timeStep = .1;"
+		"		G = 1;"
+		"       for (int i=start; i<stop; i++){"
+		"           nbody curBody = A[i];"
+		"			if (C[i].dead) continue;"
+		"			for (int t=0; t < n; t++)"
+		"			{"
+		"				if (i != t)"
+		"				{"
+		"					nbody target = A[t];"
+		"					double distX = target.x - curBody.x;"
+		"					double distY = target.y - curBody.y;"
+		"					double totalDist = sqrt(distX*distX + distY*distY);"
+		"					if (totalDist == 0) continue;"
+		""
+		"					bool withinRange = totalDist < target.radius || totalDist < curBody.radius;"
+		"					if ((withinRange && (curBody.mass >= target.mass || curBody.staticBody)) && !target.staticBody)"
+		"					{"
+		"						curBody.velX = (curBody.mass*curBody.velX + target.mass*target.velX)/(curBody.mass+target.mass);"
+		"						curBody.velY = (curBody.mass*curBody.velY + target.mass*target.velY)/(curBody.mass+target.mass);"
+		"						curBody.mass += target.mass;"
+		"						curBody.radius = cbrt(target.radius*target.radius*target.radius + curBody.radius*curBody.radius*curBody.radius);"
+		"						C[t].dead = 1;"
+		"					}"
+		"					else"
+		"					{"
+		"						double accel = target.mass*G/(totalDist*totalDist);"
+		"						double accX = accel * distX/totalDist;"
+		"						double accY = accel * distY/totalDist;"
+		"						curBody.velX += accX*timeStep;"
+		"						curBody.velY += accY*timeStep;"
+		"					}"
+		"				}"	
+		"			}"
+		""
+		"			if (curBody.staticBody){"
+		"				curBody.velX = 0;"
+		"				curBody.velY = 0;"
+		"			}"
+		""			
+		"           C[i].velX = curBody.velX;"
+		"           C[i].velY = curBody.velY;"
+		" 			C[i].x = curBody.x + curBody.velX*timeStep;"
+		"			C[i].y = curBody.y + curBody.velY*timeStep;"
+		"			C[i].mass = curBody.mass;"
+		"			C[i].radius = curBody.radius;"
+		"		}"
+		"   }";
+	
+	sources.push_back({kernel_code.c_str(), kernel_code.length()});
+
+	cl::Program program(context, sources);
+	if (program.build({default_device}) != CL_SUCCESS) {
+		std::cout << "Error building: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(default_device) << std::endl;
+		exit(1);
+	}
+
+	// create a queue (a queue of commands that the GPU will execute)
+	cl::CommandQueue queue(context, default_device);
+
+	// create buffers on device (allocate space on GPU)
+	cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, sizeof(nbody) * 10000);
+	cl::Buffer buffer_C(context, CL_MEM_READ_WRITE, sizeof(nbody) * 10000);
+	cl::Buffer buffer_N(context, CL_MEM_READ_ONLY,  sizeof(int));
+
 	bool running = true;
 	SDL_Event event;
 	SDL_Init(SDL_INIT_EVERYTHING);
@@ -215,10 +322,15 @@ int main(int argc, char** argv)
 
 		//Apply gravitational acceleration between all bodies
 		//Combine bodies that have moved too close to one another (perfectly elastic collision)
-		updateBodies(&nbodyList);
+		nbodyList = updateBodies(nbodyList, program, default_device, context, queue, buffer_A, buffer_C, buffer_N);
 
-		for (int i=0; i<nbodyList.size(); i++)
+		for (int i=nbodyList.size()-1; i>=0; i--)
 		{
+			if (nbodyList[i].dead)
+			{
+				nbodyList.erase(nbodyList.begin() + i);
+				continue;
+			}
 			nbody curBody = nbodyList.at(i);
 			vector<SDL_Point> circleCoords;
 			//Get the points representing the circle of the body and render it
@@ -321,7 +433,7 @@ int main(int argc, char** argv)
 		}
 		else if (keystate[SDL_SCANCODE_A] && !buttonFlag)
 		{
-			makeAccDisk(2000, height, 200000, mainWin, &nbodyList);
+			makeAccDisk(9999, height*4, 200000, mainWin, &nbodyList);
 			buttonFlag = true;
 		}
 		else if (keystate[SDL_SCANCODE_L])
@@ -377,6 +489,7 @@ int main(int argc, char** argv)
 
 		//Update screen
 		SDL_RenderPresent(ren);
+		Sleep(1);
 	}
 
 	SDL_DestroyWindow(mainWin);
