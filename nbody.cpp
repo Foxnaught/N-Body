@@ -4,18 +4,152 @@
 #include <math.h>
 #include <stdint.h>
 #include "SDL/include/SDL.h"
+#include "SDL/include/SDL_ttf.h"
 #include <CL/cl.hpp>
 #include "windows.h"
+#include <chrono>
 
 using namespace std;
 
 //Gravitational constant, a mass of 1 is equivalent to 1kg
-//double G = 6.67408E-10f;
-//double unitMass = 1.5*pow(10, 9);
-//Toy constant, a mass of 1 is equivalent to asteroid size  ~1.5 billion kg
+//double G = 6.67408E-11f;
+//double unitMass = 1.5*pow(10, 10);
+//Toy constant, a mass of 1 is equivalent to asteroid size  ~15 billion kg
 double G = 1;
 double unitMass = 1;
+double scale = 1.0;
 
+class MenuItem
+{
+public:
+	int x;
+	int y;
+	int width;
+	int height;
+	int borderSize = 0;
+	bool hasDragBar = false; //Bar at the top of menu for moving it
+	bool transparent = false;
+	string text = "";
+	vector<MenuItem*> children;
+	SDL_Renderer* ren;
+	TTF_Font* font;
+	SDL_Surface* surface;
+	SDL_Texture* texture;
+	SDL_Color color = { 255, 255, 255 };
+	SDL_Color background = {0, 0, 0};
+	MenuItem(SDL_Renderer* argRen, int offsetX, int offsetY, int argWidth, int argHeight, int argBorderSize=0)
+	{
+		this->ren = argRen;
+		this->x = offsetX;
+		this->y = offsetY;
+		this->width = argWidth;
+		this->height = argHeight;
+		this->font = TTF_OpenFont("C:/Windows/Fonts/arial.ttf", 11);
+		this->surface = TTF_RenderText_Solid(this->font, this->text.c_str(), this->color);
+		this->texture = SDL_CreateTextureFromSurface(argRen, this->surface);
+		this->borderSize = argBorderSize;
+	}
+
+	~MenuItem()
+	{
+		TTF_CloseFont(this->font);
+	}
+
+	void setDragBar(bool argDragBar)
+	{
+		this->hasDragBar = argDragBar;
+	}
+
+	void setText(string argText)
+	{
+		SDL_FreeSurface(this->surface);
+		SDL_DestroyTexture(this->texture);
+		this->text = argText;
+		this->surface = TTF_RenderText_Solid(this->font, this->text.c_str(), this->color);
+		this->texture = SDL_CreateTextureFromSurface(this->ren, this->surface);
+	}
+
+	void captureInput()
+
+	void render(int globalX, int globalY, int mouseX, int mouseY)
+	{
+		if (!this->transparent)
+		{
+			SDL_SetRenderDrawColor(this->ren, 0, 0, 0, 255);
+			SDL_Rect back;
+			back.x = globalX;
+			back.y = globalY;
+			back.w = this->width;
+			back.h = this->height;
+			SDL_RenderFillRect(this->ren, &back);
+		}
+
+		if (this->text != "")
+		{
+			int textureWidth, textureHeight;
+			SDL_QueryTexture(this->texture, nullptr, nullptr, &textureWidth, &textureHeight);
+
+			SDL_Rect Message_rect; //create a rect
+			Message_rect.x = globalX + this->width/2 - textureWidth/2;  //controls the rect's x coordinate 
+			Message_rect.y = globalY + this->height/2 - textureHeight/2; // controls the rect's y coordinte
+			Message_rect.w = textureWidth; // controls the width of the rect
+			Message_rect.h = textureHeight; // controls the height of the rect
+			SDL_RenderCopy(ren, this->texture, NULL, &Message_rect);
+		}
+
+		if (this->borderSize)
+		{
+			SDL_Rect border;
+			border.x = globalX;
+			border.y = globalY;
+			border.w = this->width;
+			border.h = this->height;
+			SDL_SetRenderDrawColor(this->ren, 255, 255, 255, 255);
+			SDL_RenderDrawRect(this->ren, &border);
+		}
+
+		int childX = mouseX - this->x;
+		int childY = mouseY - this->y;
+		int totalY = 0;
+
+		if (this->hasDragBar)
+		{
+			SDL_Rect bar;
+			bar.x = globalX;
+			bar.y = globalY;
+			bar.w = this->width;
+			bar.h = 15;
+			SDL_SetRenderDrawColor(this->ren, 255, 255, 255, 255);
+			SDL_RenderDrawRect(this->ren, &bar);
+			totalY = bar.h;
+		}
+
+		for (int i=0;i<this->children.size();i++)
+		{
+			this->children[i]->render(globalX + this->children[i]->x, globalY + totalY, childX, childY);
+			totalY += this->children[i]->height;
+		}
+	}
+};
+
+class SystemMenu
+{
+	int x;
+	int y;
+	SDL_Renderer* ren;
+
+	SystemMenu(SDL_Renderer* argRen, int argX, int argY)
+	{
+		this->ren = argRen;
+		this->x = argX;
+		this->y = argY;
+	}
+
+	void render(int mouseX, int mouseY)
+	{
+		
+	}
+};
 
 vector<SDL_Point> getCirclePoints(int xOff, int yOff, int numPoints, double radius)
 {
@@ -56,7 +190,7 @@ nbody getNewNBody(int newX, int newY, double dX, double dY, int unitMasses, bool
 	newNBody.velY = dY;
 	//By basing the mass and radius on a standard unit we can scale to large and small by changing the unit mass
 	newNBody.mass = unitMass*unitMasses;
-	newNBody.radius = 1.5;
+	newNBody.radius = 1.0;
 	if (unitMasses > 1)
 		newNBody.radius *= cbrt(unitMasses);
 
@@ -105,7 +239,7 @@ void makeAccDisk(int massCount, double radius, double centerMass, SDL_Window* re
 		double newVelY = cos(tanAngle)*totalVel;
 		nbody newBody = getNewNBody(dX + (double)width/2, dY + (double)height/2, newVelX, newVelY, 1, false);
 		nbodyList->push_back(newBody);
-	}	
+	}
 }
 
 void printTotalMomentum(vector<nbody>* nbodyList);
@@ -167,6 +301,8 @@ void printTotalMomentum(vector<nbody>* nbodyList)
 
 int main(int argc, char** argv)
 {
+	using namespace std::chrono;
+
 	// get all platforms (drivers), e.g. NVIDIA
 	std::vector<cl::Platform> all_platforms;
 	cl::Platform::get(&all_platforms);
@@ -239,6 +375,8 @@ int main(int argc, char** argv)
 		"					bool withinRange = totalDist < target.radius || totalDist < curBody.radius;"
 		"					if ((withinRange && (curBody.mass >= target.mass || curBody.staticBody)) && !target.staticBody)"
 		"					{"
+		"						if (curBody.mass == target.mass && i < t)"
+		"							continue;"
 		"						curBody.velX = (curBody.mass*curBody.velX + target.mass*target.velX)/(curBody.mass+target.mass);"
 		"						curBody.velY = (curBody.mass*curBody.velY + target.mass*target.velY)/(curBody.mass+target.mass);"
 		"						curBody.mass += target.mass;"
@@ -282,17 +420,28 @@ int main(int argc, char** argv)
 	cl::CommandQueue queue(context, default_device);
 
 	// create buffers on device (allocate space on GPU)
-	cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, sizeof(nbody) * 10000);
-	cl::Buffer buffer_C(context, CL_MEM_READ_WRITE, sizeof(nbody) * 10000);
+	cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, sizeof(nbody) * 100000);
+	cl::Buffer buffer_C(context, CL_MEM_READ_WRITE, sizeof(nbody) * 100000);
 	cl::Buffer buffer_N(context, CL_MEM_READ_ONLY,  sizeof(int));
 
 	bool running = true;
 	SDL_Event event;
 	SDL_Init(SDL_INIT_EVERYTHING);
 	SDL_Window *mainWin = SDL_CreateWindow("NBODY SIM", 100, 100, 1000, 720, SDL_WINDOW_SHOWN);
-	SDL_Renderer *ren = SDL_CreateRenderer(mainWin, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+	SDL_Renderer *ren = SDL_CreateRenderer(mainWin, -1, SDL_RENDERER_ACCELERATED);
 
 	vector<nbody> nbodyList;
+
+	TTF_Init();
+
+	MenuItem mainMenu(ren, 50, 50, 100, 30);
+	mainMenu.setDragBar(true);
+	for (int i=0;i<4;i++)
+	{
+		MenuItem* item = new MenuItem(ren, 0, 0, 100, 30, 1);
+		item->setText("test " + to_string(i));
+		mainMenu.children.push_back(item);
+	}
 
 	//Keep track if we have been holding a keyboard or mouse button is being held down
 	bool buttonFlag = false;
@@ -310,8 +459,38 @@ int main(int argc, char** argv)
 	int dY = 0;
 	double cameraOffsetX = 0;
 	double cameraOffsetY = 0;
+	high_resolution_clock::time_point lastTime = high_resolution_clock::now();
+	vector<duration<double>> timeSamples;
 	while (running)
 	{
+		// timeSamples.push_back(high_resolution_clock::now()-lastTime);
+		// if (timeSamples.size() > 30)
+		// {
+		// 	timeSamples.erase(timeSamples.begin());
+
+		// 	double avgDur;
+		// 	for (int i=0;i<timeSamples.size();i++)
+		// 	{
+		// 		avgDur += timeSamples[i].count();
+		// 	}
+		// 	avgDur /= timeSamples.size();
+
+		// 	//TTF_Font* Sans = TTF_OpenFont("Sans.ttf", 24); //this opens a font style and sets a size
+
+		// 	//SDL_Color White = {255, 255, 255};  // this is the color in rgb format, maxing out all would give you the color white, and it will be your text's color
+		// 	//SDL_Surface* surfaceMessage = TTF_RenderText_Solid(Sans, ("FPS: " + to_string(1/avgDur)).c_str(), White); // as TTF_RenderText_Solid could only be used on SDL_Surface then you have to create the surface first
+		// 	//SDL_Texture* Message = SDL_CreateTextureFromSurface(ren, surfaceMessage); //now you can convert it into a texture
+		// 	//SDL_Rect Message_rect; //create a rect
+		// 	//Message_rect.x = 0;  //controls the rect's x coordinate 
+		// 	//Message_rect.y = 0; // controls the rect's y coordinte
+		// 	//Message_rect.w = 100; // controls the width of the rect
+		// 	//Message_rect.h = 100; // controls the height of the rect
+		// 	//SDL_RenderCopy(ren, Message, NULL, &Message_rect);
+
+		// 	//cout << 1/avgDur << " frames per second" << endl;
+		// }
+		// lastTime = high_resolution_clock::now();
+
 		SDL_SetRenderDrawColor(ren, 0x00, 0x00, 0x00, 0xFF);
 		SDL_RenderClear(ren);
 		int width;
@@ -356,13 +535,19 @@ int main(int argc, char** argv)
 			}
 			else
 			{
-				circleCoords = getCirclePoints(-cameraOffsetX + curBody.x, -cameraOffsetY + curBody.y, 20, curBody.radius);
+				SDL_Point normal;
+				normal.x = -cameraOffsetX + curBody.x;
+				normal.y = -cameraOffsetY + curBody.y;
+				SDL_Point scaled;
+				scaled.x = (normal.x - width/2)*scale + width/2;
+				scaled.y = (normal.y - height/2)*scale + height/2;
+				circleCoords = getCirclePoints(scaled.x, scaled.y, 20, curBody.radius*scale);
 				vector<SDL_Point> velVec;
 				SDL_Point start, end;
-				start.x = -cameraOffsetX + curBody.x;
-				start.y = -cameraOffsetY + curBody.y;
-				end.x = -cameraOffsetX + curBody.x+curBody.velX*1;
-				end.y = -cameraOffsetY + curBody.y+curBody.velY*1;
+				start.x = scaled.x;
+				start.y = scaled.y;
+				end.x = scaled.x + curBody.velX;
+				end.y = scaled.y + curBody.velY;
 				velVec.push_back(start);
 				velVec.push_back(end);
 				SDL_SetRenderDrawColor(ren, 0xFF, 0x00, 0x00, 0xFF);
@@ -397,15 +582,36 @@ int main(int argc, char** argv)
 			SDL_RenderDrawLines(ren, logWindowPoints.data(), logWindowPoints.size());
 		}
 
-		SDL_PollEvent(&event);
-		if (event.type == SDL_QUIT)
-			running = false;
-		
+		int ret = SDL_PollEvent(&event);
+		if (ret)
+		{
+			if (event.type == SDL_QUIT)
+				running = false;
+			else if (event.type == SDL_MOUSEWHEEL)
+			{
+				if(event.wheel.y > 0) // scroll up
+				{
+					scale *= .95;
+				}
+				else
+				{
+					scale /= .95;
+				}
+			}
+			else if (event.type == SDL_MOUSEBUTTONEVENT)
+			{
+				bool ret = mainMenu.captureInput(event);
+			}
+		}
+
 		const Uint8* keystate = SDL_GetKeyboardState(NULL);
 		int mouseX;
 		int mouseY;
 		double moveDiff = 3;
 		Uint32 mouseState = SDL_GetMouseState(&mouseX, &mouseY);
+
+		mainMenu.render(mainMenu.x, mainMenu.y, mouseX, mouseY);
+
 		if (keystate[SDL_SCANCODE_C])
 		{
 			nbodyList.clear();
@@ -415,25 +621,29 @@ int main(int argc, char** argv)
 			cameraOffsetX = 0;
 			cameraOffsetY = 0;
 		}
+		else if (keystate[SDL_SCANCODE_Z])
+		{
+			scale = 1;
+		}
 		else if (keystate[SDL_SCANCODE_LEFT])
 		{
-			cameraOffsetX -= moveDiff;
+			cameraOffsetX -= moveDiff * 1/scale;
 		}
 		else if (keystate[SDL_SCANCODE_RIGHT])
 		{
-			cameraOffsetX += moveDiff;
+			cameraOffsetX += moveDiff * 1/scale;
 		}
 		else if (keystate[SDL_SCANCODE_UP])
 		{
-			cameraOffsetY -= moveDiff;
+			cameraOffsetY -= moveDiff * 1/scale;
 		}
 		else if (keystate[SDL_SCANCODE_DOWN])
 		{
-			cameraOffsetY += moveDiff;
+			cameraOffsetY += moveDiff * 1/scale;
 		}
 		else if (keystate[SDL_SCANCODE_A] && !buttonFlag)
 		{
-			makeAccDisk(9999, height*4, 200000, mainWin, &nbodyList);
+			makeAccDisk(40000, height*10, 200000, mainWin, &nbodyList);
 			buttonFlag = true;
 		}
 		else if (keystate[SDL_SCANCODE_L])
@@ -445,7 +655,7 @@ int main(int argc, char** argv)
 		}
 		else if (keystate[SDL_SCANCODE_P] && !buttonFlag)
 		{
-			placeRandomField(30, .5, 5*height, mainWin, &nbodyList);
+			placeRandomField(40000, 5, 10*height, mainWin, &nbodyList);
 			buttonFlag = true;
 		}
 		else if (mouseState && !placingBody)
@@ -486,13 +696,21 @@ int main(int argc, char** argv)
 			SDL_RenderDrawLine(ren, newX, newY, dX, dY);
 		}
 
+		SDL_Rect dest;
+		dest.x = width/2;
+		dest.y = height/2;
+		dest.w = 100;
+		dest.h = 100;
 
+		//SDL_RenderCopy(ren, texture, NULL, &dest);
 		//Update screen
 		SDL_RenderPresent(ren);
 		Sleep(1);
 	}
 
+	TTF_Quit();
 	SDL_DestroyWindow(mainWin);
+	SDL_Quit();
 	return 0;
 }
 
