@@ -69,7 +69,7 @@ public:
 		this->texture = SDL_CreateTextureFromSurface(this->ren, this->surface);
 	}
 
-	void captureInput()
+	void captureInput();
 
 	void render(int globalX, int globalY, int mouseX, int mouseY)
 	{
@@ -177,8 +177,8 @@ struct __attribute__ ((packed)) nbody
 	cl_double velY;
 	cl_double radius;
 	cl_int mass;
-	cl_bool staticBody;
-	cl_bool dead;
+	bool staticBody;
+	bool dead;
 };
 
 nbody getNewNBody(int newX, int newY, double dX, double dY, int unitMasses, bool staticFlag)
@@ -323,7 +323,7 @@ int main(int argc, char** argv)
 	}
 
 	// use device[1] because that's a GPU; device[0] is the CPU
-	cl::Device default_device=all_devices[1];
+	cl::Device default_device=all_devices[0];
 	std::cout<< "Using device: "<<default_device.getInfo<CL_DEVICE_NAME>()<<"\n";
 
 	// a context is like a "runtime link" to the device and platform;
@@ -346,7 +346,7 @@ int main(int argc, char** argv)
 		"   bool dead;"
 		"} nbody;"
 		""
-		"   void kernel simple_add(global const nbody* A, nbody* C, global const int* N) {"
+		"   void kernel simple_add(global const nbody* A, global nbody* C, global const int* N) {"
 		"       int ID, Nthreads, n, ratio, start, stop;"
 		"		double timeStep, G;"
 		""
@@ -598,10 +598,10 @@ int main(int argc, char** argv)
 					scale /= .95;
 				}
 			}
-			else if (event.type == SDL_MOUSEBUTTONEVENT)
-			{
-				bool ret = mainMenu.captureInput(event);
-			}
+			//else if (event.type == SDL_MOUSEBUTTONDOWN)
+			//{
+			//	bool ret = mainMenu.captureInput(event);
+			//}
 		}
 
 		const Uint8* keystate = SDL_GetKeyboardState(NULL);
