@@ -8,6 +8,7 @@
 #include <CL/cl.hpp>
 #include "windows.h"
 #include <chrono>
+#include <fstream>
 
 using namespace std;
 
@@ -284,18 +285,59 @@ vector<nbody> updateBodies(vector<nbody> nbodyList, cl::Program program, cl::Dev
 	return nbodyList;
 }
 
+void saveNBodyList(vector<nbody>* nbodyList)
+{
+	ofstream f;
+	f.open("nbody.csv", ios::out);
+
+	for (int i=0;i<nbodyList->size();i++)
+	{
+		nbody curBody = nbodyList->at(i);
+		if (!curBody.dead)
+			f << curBody.x << "," << curBody.y << "," << curBody.velX << "," << curBody.velY << "," << curBody.radius << "," << curBody.mass << "\n";
+
+	}
+
+	f.close();
+}
+
+void loadNBodyList(vector<nbody>* nbodyList)
+{
+	nbodyList->clear();
+
+	ifstream f;
+	f.open("nbody.csv", ios::in);
+
+	string line;
+	while (getline(f, line))
+	{
+		nbody newBody;
+		newBody.x = atof(strtok((char*)line.c_str(), ","));
+		newBody.y = atof(strtok(nullptr, ","));
+		newBody.velX = atof(strtok(nullptr, ","));
+		newBody.velY = atof(strtok(nullptr, ","));
+		newBody.radius = atof(strtok(nullptr, ","));
+		newBody.mass = atoi(strtok(nullptr, ","));
+		newBody.dead = false;
+		newBody.staticBody = false;
+		nbodyList->push_back(newBody);
+	}
+
+	f.close();
+}
+
 void printTotalMomentum(vector<nbody>* nbodyList)
 {
-	double momentumX = 0.00, momentumY = 0.00;
+	double momentumX = 0.00, momentumY = 0.00, tMomentum = 0.00;
 	for (int i=0;i<nbodyList->size();i++)
 	{
 		nbody m = nbodyList->at(i);
-		momentumX += m.mass*m.velX;
-		momentumY += m.mass*m.velY;
+		momentumX = m.mass*m.velX;
+		momentumY = m.mass*m.velY;
+		tMomentum += sqrt(momentumX*momentumX + momentumY*momentumY);
 	}
 
-	cout << momentumX << endl;
-	cout << momentumY << endl;
+	cout << tMomentum << endl;
 	cout << "----" << endl;
 }
 
@@ -503,6 +545,8 @@ int main(int argc, char** argv)
 		//Combine bodies that have moved too close to one another (perfectly elastic collision)
 		nbodyList = updateBodies(nbodyList, program, default_device, context, queue, buffer_A, buffer_C, buffer_N);
 
+		//printTotalMomentum(&nbodyList);
+
 		for (int i=nbodyList.size()-1; i>=0; i--)
 		{
 			if (nbodyList[i].dead)
@@ -644,6 +688,16 @@ int main(int argc, char** argv)
 		else if (keystate[SDL_SCANCODE_A] && !buttonFlag)
 		{
 			makeAccDisk(40000, height*10, 200000, mainWin, &nbodyList);
+			buttonFlag = true;
+		}
+		else if (keystate[SDL_SCANCODE_F] && !buttonFlag)
+		{
+			saveNBodyList(&nbodyList);
+			buttonFlag = true;
+		}
+		else if (keystate[SDL_SCANCODE_G] && !buttonFlag)
+		{
+			loadNBodyList(&nbodyList);
 			buttonFlag = true;
 		}
 		else if (keystate[SDL_SCANCODE_L])
